@@ -124,10 +124,19 @@ def admin_user_profiles(request, user_id):
         return JsonResponse({"error": "profile must include appScope and role"}, status=400)
 
     if request.method == "POST":
-        profile, _ = UserProfile.objects.get_or_create(
+        profile, created = UserProfile.objects.get_or_create(
             user=user, app_scope=app_scope, role=role, context=context
         )
-        return JsonResponse({"data": _user_payload(profile.user)}, status=201)
+        message = "Profile assigned" if created else "Profile already exists"
+        status_code = 201 if created else 200
+        return JsonResponse(
+            {
+                "data": _user_payload(profile.user),
+                "created": created,
+                "message": message,
+            },
+            status=status_code,
+        )
 
     UserProfile.objects.filter(user=user, app_scope=app_scope, role=role, context=context).delete()
     return JsonResponse({"data": _user_payload(user)})

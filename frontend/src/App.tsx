@@ -33,7 +33,11 @@ async function api(path: string, options: RequestInit = {}) {
     ...options,
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload.error || `HTTP ${response.status}`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -60,6 +64,24 @@ export default function App() {
     setStatus(message);
     setIsError(error);
   };
+  const clearSessionWithMessage = (message: string) => {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_username");
+    setAuthToken("");
+    setSessionUser("");
+    setUsers([]);
+    setIsAuthAdmin(false);
+    setAuthChecked(true);
+    setMessage(message, true);
+  };
+  const handleApiError = (prefix: string, error: unknown) => {
+    const apiError = error as Error & { status?: number };
+    if (apiError.status === 401) {
+      clearSessionWithMessage("Session expired, please login again");
+      return;
+    }
+    setMessage(`${prefix}: ${apiError.message}`, true);
+  };
 
   const loadUsers = async () => {
     if (!authToken || !isAuthAdmin) return;
@@ -68,7 +90,7 @@ export default function App() {
       setUsers(payload.data || []);
       setMessage("Users loaded");
     } catch (error) {
-      setMessage(`Load failed: ${(error as Error).message}`, true);
+      handleApiError("Load failed", error);
     }
   };
 
@@ -90,7 +112,12 @@ export default function App() {
       const profiles = (payload?.data?.profiles || []) as SessionProfile[];
       const allowed = profiles.some((p) => p.appScope === "auth-app" && p.role === "auth-admin");
       setIsAuthAdmin(allowed);
-    } catch {
+    } catch (error) {
+      const apiError = error as Error & { status?: number };
+      if (apiError.status === 401) {
+        clearSessionWithMessage("Session expired, please login again");
+        return;
+      }
       setIsAuthAdmin(false);
     } finally {
       setAuthChecked(true);
@@ -152,7 +179,7 @@ export default function App() {
       setMessage(`User ${newUsername} created`);
       await loadUsers();
     } catch (error) {
-      setMessage(`Create failed: ${(error as Error).message}`, true);
+      handleApiError("Create failed", error);
     }
   };
 
@@ -171,7 +198,7 @@ export default function App() {
       setMessage(`Password reset for ${resetUserRef}`);
       await loadUsers();
     } catch (error) {
-      setMessage(`Password reset failed: ${(error as Error).message}`, true);
+      handleApiError("Password reset failed", error);
     }
   };
 
@@ -184,14 +211,14 @@ export default function App() {
   const assignProfile = async () => {
     if (!profileUserId) return setMessage("userId is required for profile assignment", true);
     try {
-      await api(`/admin/auth/users/${profileUserId}/profiles`, {
+      const payload = await api(`/admin/auth/users/${profileUserId}/profiles`, {
         method: "POST",
         body: JSON.stringify(profilePayload()),
       });
-      setMessage("Profile assigned");
+      setMessage(payload?.message || "Profile assigned");
       await loadUsers();
     } catch (error) {
-      setMessage(`Assign failed: ${(error as Error).message}`, true);
+      handleApiError("Assign failed", error);
     }
   };
 
@@ -205,7 +232,7 @@ export default function App() {
       setMessage("Profile revoked");
       await loadUsers();
     } catch (error) {
-      setMessage(`Revoke failed: ${(error as Error).message}`, true);
+      handleApiError("Revoke failed", error);
     }
   };
 
@@ -222,7 +249,7 @@ export default function App() {
       setMessage(`Removed ${profile.appScope}/${profile.role} from ${user.username}`);
       await loadUsers();
     } catch (error) {
-      setMessage(`Remove profile failed: ${(error as Error).message}`, true);
+      handleApiError("Remove profile failed", error);
     }
   };
 
@@ -235,7 +262,7 @@ export default function App() {
       setMessage(user.suspended ? "User unsuspended" : "User suspended");
       await loadUsers();
     } catch (error) {
-      setMessage(`Suspend action failed: ${(error as Error).message}`, true);
+      handleApiError("Suspend action failed", error);
     }
   };
 
